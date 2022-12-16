@@ -1,0 +1,5 @@
+[workspace]
+members = [
+  "pltw-cypher",
+  "pltw-cypher-ui",
+]
