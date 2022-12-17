@@ -14,6 +14,9 @@ Cypher Ideas
     - a random distrobution (uniform + noise). this would require the use of random data from the key (so that the multiple possibilities would be known to the decryptor)
 - (opt) encode output in base-64 for ease of sending the message
 
+- to deal with repetitive value issues, every time a message is created a new random word_pos is selected (system random, 0..2^68)
+- the word_pos is encrypted with a word_pos of zero, and prepended to the output text.
+
 good hash algorithm: https://github.com/BLAKE3-team/BLAKE3
 good CSPRNG: https://rust-random.github.io/rand/rand_chacha/struct.ChaCha20Rng.html
 

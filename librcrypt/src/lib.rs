@@ -1,6 +1,8 @@
 use rand::{CryptoRng, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+const MAGIC: &[u8] = b"RCrypt";
+
 // fn main() {
 //     let key = "very secret secret key";
 //     let message = "we ride at dawn";
@@ -10,13 +12,24 @@ use rand_chacha::ChaCha20Rng;
 //     println!("{decoded}");
 // }
 
-pub fn encode_base64(key: &str, message: &str) -> String {
+// encrypt and encode in base64, with the magic byte and offset prepended
+pub fn encrypt_base64(key: &str, offset: u128, message: &str) -> String {
+    let encrypted_offset = encrypt_raw(key, 0, &offset.to_be_bytes());
+    let encrypted_text = encrypt_raw(key, offset, message.as_bytes());
+    let mut all = MAGIC.to_vec();
+    all.extend_from_slice(&encrypted_offset);
+    all.extend_from_slice(&encrypted_text);
+    base64::encode(&all)
+}
+
+// encrypt with no encoding. does not include any metadata.
+pub fn encrypt_raw(key: &str, offset: u128, data: &[u8]) -> Vec<u8> {
     let key_hash = blake3::hash(key.as_bytes());
     let mut rng = ChaCha20Rng::from_seed(key_hash.into());
-    let out_bytes: Vec<u8> = message
-        .as_bytes()
+    rng.set_word_pos(offset);
+    let out_bytes: Vec<u8> = data
         .iter()
-        .map(|&in_byte| {
+        .flat_map(|&in_byte| {
             let dup = in_byte as u16 | ((!in_byte as u16) << 8);
             let shuffled = shuffle_bits(&mut rng, dup);
             [
@@ -24,17 +37,46 @@ pub fn encode_base64(key: &str, message: &str) -> String {
                 (shuffled & 255u16) as u8,
             ]
         })
-        .flatten()
         .collect();
-    base64::encode(out_bytes)
+    out_bytes
 }
 
-pub fn decode_from_base64(key: &str, encoded: &str) -> String {
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum DecryptError {
+    #[error("Length is not a multiple of 2 (something is missing)")]
+    LengthMismatch,
+    #[error("Magic bytes are missing or damaged")]
+    NoMagic,
+    #[error("Invalid base-64 data (invalid charecters in input) {0:?}")]
+    Base64Decode(#[from] base64::DecodeError),
+    #[error("Message contains invalid utf-8")]
+    InvalidUTF8(#[from] std::string::FromUtf8Error),
+}
+
+pub fn decrypt_base64(key: &str, message: &str) -> Result<String, DecryptError> {
+    let bytes = base64::decode(message)?;
+    if &bytes[0..MAGIC.len()] != MAGIC {
+        return Err(DecryptError::NoMagic)
+    }
+    const OFFSET_LEN: usize = 16*2/* u128 byte len * 2 (encoding size increase) */;
+    let offset_data = &bytes[MAGIC.len()..][..OFFSET_LEN];
+    let offset = u128::from_be_bytes(decrypt_raw(key, 0, offset_data)?.try_into().unwrap());
+
+    let message_data = &bytes[MAGIC.len()+OFFSET_LEN..];
+    let decrypted_message = decrypt_raw(key, offset, message_data)?;
+
+    Ok(String::from_utf8(decrypted_message)?)
+}
+
+// offset is infered from encoded text (prefixed)
+pub fn decrypt_raw(key: &str, offset: u128, data: &[u8]) -> Result<Vec<u8>, DecryptError> {
     let key_hash = blake3::hash(key.as_bytes());
     let mut rng = ChaCha20Rng::from_seed(key_hash.into());
-    let decoded = base64::decode(encoded).unwrap();
-    assert_eq!(decoded.len() % 2, 0);
-    let out_bytes: Vec<u8> = decoded
+    rng.set_word_pos(offset);
+    if data.len() % 2 != 0 {
+        return Err(DecryptError::LengthMismatch);
+    }
+    Ok(data
         .chunks(2)
         .map(|in_byte| {
             let in_byte = ((in_byte[0] as u16) << 8) | in_byte[1] as u16;
@@ -46,8 +88,7 @@ pub fn decode_from_base64(key: &str, encoded: &str) -> String {
             assert_eq!(!left, right);
             right
         })
-        .collect();
-    String::from_utf8(out_bytes).unwrap()
+        .collect())
 }
 
 fn random_indicies<T: Rng + CryptoRng>(rng: &mut T) -> Vec<usize> {
