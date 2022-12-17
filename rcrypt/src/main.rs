@@ -54,6 +54,9 @@ fn main() {
                         LengthMismatch | NoMagic | Base64Decode(..) => {
                             f.push_str("\nLikely a mistyped or invalid input")
                         }
+                        Corrupt => {
+                            f.push_str("\nEither mistyped input or tampering was attempted!")
+                        }
                     }
                     eprintln!("{f}")
                 }
@@ -171,6 +174,9 @@ impl eframe::App for MyApp {
                                     LengthMismatch | NoMagic | Base64Decode(..) => {
                                         f.push_str("\nLikely a mistyped or invalid input")
                                     }
+                                    Corrupt => f.push_str(
+                                        "\nEither mistyped input or tampering was attempted!",
+                                    ),
                                 }
                                 f
                             }

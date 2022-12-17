@@ -53,6 +53,8 @@ pub enum DecryptError {
     Base64Decode(#[from] base64::DecodeError),
     #[error("Message contains invalid utf-8")]
     InvalidUTF8(#[from] std::string::FromUtf8Error),
+    #[error("Message is corrupted (tampering was attempted?)")]
+    Corrupt,
 }
 
 /// erorrs in decryption are NOT caused by key mismatch (except InvalidUTF8)
@@ -82,8 +84,7 @@ pub fn decrypt_raw(key: &str, offset: u128, data: &[u8]) -> Result<Vec<u8>, Decr
     if data.len() % 2 != 0 {
         return Err(DecryptError::LengthMismatch);
     }
-    Ok(data
-        .chunks(2)
+    data.chunks(2)
         .map(|in_byte| {
             let in_byte = ((in_byte[0] as u16) << 8) | in_byte[1] as u16;
             let unshuffled = unshuffle_bits(&mut rng, in_byte);
@@ -91,10 +92,12 @@ pub fn decrypt_raw(key: &str, offset: u128, data: &[u8]) -> Result<Vec<u8>, Decr
                 ((unshuffled & (255u16 << 8)) >> 8) as u8,
                 (unshuffled & 255u16) as u8,
             ];
-            assert_eq!(!left, right);
-            right
+            if (!left) != right {
+                return Err(DecryptError::Corrupt);
+            }
+            Ok(right)
         })
-        .collect())
+        .collect()
 }
 
 fn random_indicies<T: Rng + CryptoRng>(rng: &mut T) -> Vec<usize> {
