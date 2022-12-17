@@ -1,85 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use clap::Parser;
 use eframe::egui::{self, RichText};
 use rand::prelude::*;
-use std::io::Read;
 
-#[derive(Debug, clap::Parser)]
-pub struct Args {
-    /// simple stdin -> librcrypt -> stdout encryption and decryption.
-    #[command(subcommand)]
-    cmd: Option<Cmd>,
-    /// Key to use with non-GUI operations
-    #[clap(long, short)]
-    key: Option<String>,
-}
-
-#[derive(Debug, clap::Subcommand)]
-pub enum Cmd {
-    Encrypt,
-    Decrypt,
-}
-
-fn main() {
-    let args = Args::parse();
-    if args.cmd.is_some() {
-        assert!(
-            args.key.is_some(),
-            "CLI operation used, but no key provided!"
-        );
-        let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf).unwrap();
-        match args.cmd.unwrap() {
-            Cmd::Encrypt => {
-                print!(
-                    "{}",
-                    librcrypt::encrypt_base64(
-                        &args.key.unwrap(),
-                        rand::rngs::OsRng.sample(rand::distributions::Uniform::new(0, 2 ^ 68)),
-                        &buf
-                    )
-                )
-            }
-            Cmd::Decrypt => match librcrypt::decrypt_base64(&args.key.unwrap(), &buf) {
-                Ok(txt) => print!("{txt}"),
-                Err(err) => {
-                    use librcrypt::DecryptError::*;
-                    let mut f = format!("Error in decryption:\n{err:#?}");
-                    match err {
-                        TooShort => f = "Too short to be decrypted".into(),
-                        InvalidUTF8(..) => {
-                            f.push_str("\nThis may be caused by a key mismatch, or mistyped input")
-                        }
-                        LengthMismatch | NoMagic | Base64Decode(..) => {
-                            f.push_str("\nLikely a mistyped or invalid input")
-                        }
-                        Corrupt => {
-                            f.push_str("\nEither mistyped input or tampering was attempted!")
-                        }
-                    }
-                    eprintln!("{f}")
-                }
-            },
-        }
-    } else {
-        // Log to stdout (if you run with `RUST_LOG=debug`).
-        tracing_subscriber::fmt::init();
-
-        let options = eframe::NativeOptions {
-            initial_window_size: Some(egui::vec2(320.0, 240.0)),
-            ..Default::default()
-        };
-        eframe::run_native(
-            "RCrypt v4.2.0",
-            options,
-            Box::new(|_cc| Box::new(MyApp::default())),
-        )
-    }
-}
 
 #[derive(Default)]
-struct MyApp {
+pub struct MyApp {
     // display/input vars
     key: String,
     to_encrypt: String,
