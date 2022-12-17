@@ -3,3 +3,8 @@ members = [
   "librcrypt",
   "rcrypt",
 ]
+
+[profile.release]
+lto = true # fat LTO 
+strip = true 
+panic = "abort"

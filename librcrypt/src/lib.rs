@@ -45,6 +45,8 @@ pub fn encrypt_raw(key: &str, offset: u128, data: &[u8]) -> Vec<u8> {
 pub enum DecryptError {
     #[error("Length is not a multiple of 2 (something is missing)")]
     LengthMismatch,
+    #[error("Length is too short")]
+    TooShort,
     #[error("Magic bytes are missing or damaged")]
     NoMagic,
     #[error("Invalid base-64 data (invalid charecters in input) {0:?}")]
@@ -53,16 +55,20 @@ pub enum DecryptError {
     InvalidUTF8(#[from] std::string::FromUtf8Error),
 }
 
+/// erorrs in decryption are NOT caused by key mismatch (except InvalidUTF8)
 pub fn decrypt_base64(key: &str, message: &str) -> Result<String, DecryptError> {
-    let bytes = base64::decode(message)?;
-    if &bytes[0..MAGIC.len()] != MAGIC {
-        return Err(DecryptError::NoMagic)
-    }
     const OFFSET_LEN: usize = 16*2/* u128 byte len * 2 (encoding size increase) */;
+    let bytes = base64::decode(message)?;
+    if bytes.len() < MAGIC.len() + OFFSET_LEN {
+        return Err(DecryptError::TooShort);
+    }
+    if &bytes[0..MAGIC.len()] != MAGIC {
+        return Err(DecryptError::NoMagic);
+    }
     let offset_data = &bytes[MAGIC.len()..][..OFFSET_LEN];
     let offset = u128::from_be_bytes(decrypt_raw(key, 0, offset_data)?.try_into().unwrap());
 
-    let message_data = &bytes[MAGIC.len()+OFFSET_LEN..];
+    let message_data = &bytes[MAGIC.len() + OFFSET_LEN..];
     let decrypted_message = decrypt_raw(key, offset, message_data)?;
 
     Ok(String::from_utf8(decrypted_message)?)
