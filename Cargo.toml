@@ -37,6 +37,7 @@ members = [
 ]
 
 [profile.release]
+opt-level="s" # smaller WASM
 lto = true # fat LTO 
 strip = true 
 panic = "abort"
